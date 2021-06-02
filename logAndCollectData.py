@@ -3,6 +3,8 @@
 import time
 import colorsys
 import sys
+import os
+import csv 
 import ST7735
 try:
     # Transitional fix for breaking change in LTR559
@@ -15,6 +17,7 @@ from bme280 import BME280
 from pms5003 import PMS5003, ReadTimeoutError as pmsReadTimeoutError, SerialTimeoutError
 from enviroplus import gas
 from subprocess import PIPE, Popen
+from pathlib import Path
 from PIL import Image
 from PIL import ImageDraw
 from PIL import ImageFont
@@ -26,11 +29,12 @@ logging.basicConfig(
     level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S')
 
-logging.info("""combined.py - Displays readings from all of Enviro plus' sensors
+logging.info("""logAndCollect.py - Displays readings from all of Enviro plus' sensors and saves them to a .csv fi
 
 Press Ctrl+C to exit!
 
 """)
+
 
 # BME280 temperature/pressure/humidity sensor
 bme280 = BME280()
@@ -80,7 +84,8 @@ variables = ["temperature",
              "nh3",
              "pm1",
              "pm25",
-             "pm10"]
+             "pm10",
+             "timestamp"]
 
 units = ["C",
          "hPa",
@@ -91,7 +96,8 @@ units = ["C",
          "kO",
          "ug/m3",
          "ug/m3",
-         "ug/m3"]
+         "ug/m3",
+         "time"]
 
 # Define your own warning limits
 # The limits definition follows the order of the variables array
@@ -115,7 +121,8 @@ limits = [[4, 18, 28, 35],
           [-1, -1, 200, 300],
           [-1, -1, 50, 100],
           [-1, -1, 50, 100],
-          [-1, -1, 50, 100]]
+          [-1, -1, 50, 100],
+          [0,0,0,0]]
 
 # RGB palette for values on the combined screen
 palette = [(0, 0, 255),           # Dangerously Low
@@ -125,6 +132,17 @@ palette = [(0, 0, 255),           # Dangerously Low
            (255, 0, 0)]           # Dangerously High
 
 values = {}
+
+logging.info(""" opening csv file ...""")
+
+
+file = open('enviroData.csv', 'w')
+writer = csv.writer(file)
+writer.writerow(variables)
+file.close()
+
+
+
 
 
 # Displays data and text on the 0.96" LCD
@@ -190,6 +208,8 @@ def get_cpu_temperature():
     output, _error = process.communicate()
     return float(output[output.index('=') + 1:output.rindex("'")])
 
+def get_millis():
+    return round(time.time()*1000)
 
 def main():
     # Tuning factor for compensation. Decrease this number to adjust the
@@ -238,12 +258,29 @@ def main():
             
             
             #how to log this now
+            #get the time 
             t = time.localtime()
             current_time = time.strftime("%Y:%m:%d:%H:%M:%S", t)
+            save_data(10,get_millis())
             print(current_time)
-            print(values['temperature'][-1])
-        
-            time.sleep(5)
+            
+            valuesToSave = []
+            for i in range(len(variables)):
+                variable = variables[i]
+                data_value = values[variable][-1]
+                unit = units[i]
+                valuesToSave.append(data_value)
+                print(variable, ":", data_value, unit)
+            
+            print("vals to save ", valuesToSave)
+            file = open('enviroData.csv', 'a')
+            writer = csv.writer(file)
+            writer.writerow(valuesToSave)
+            file.close()
+            
+            print("wrote in .csv file")
+
+            time.sleep(1)
 
     # Exit cleanly
     except KeyboardInterrupt:
