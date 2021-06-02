@@ -136,7 +136,7 @@ values = {}
 logging.info(""" opening csv file ...""")
 
 
-file = open('enviroData.csv', 'w')
+file = open('enviroData.csv', 'a')
 writer = csv.writer(file)
 writer.writerow(variables)
 file.close()
