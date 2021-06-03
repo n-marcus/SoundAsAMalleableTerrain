@@ -133,10 +133,18 @@ palette = [(0, 0, 255),           # Dangerously Low
 
 values = {}
 
-logging.info(""" opening csv file ...""")
+#get time to create file name
+t = time.localtime()
+current_time = time.strftime("%Y:%m:%d:%H:%M:%S", t)
+try:
+    os.mkdir("./data")
+except:
+    print("error creating /data folder, it probably exists already")
+filename = "./data/enviroData_" + current_time + ".csv"
 
+logging.info("opening csv file" + filename)
 
-file = open('enviroData.csv', 'a')
+file = open(filename, 'w')
 writer = csv.writer(file)
 writer.writerow(variables)
 file.close()
@@ -273,14 +281,14 @@ def main():
                 print(variable, ":", data_value, unit)
             
             print("vals to save ", valuesToSave)
-            file = open('enviroData.csv', 'a')
+            file = open(filename, 'a')
             writer = csv.writer(file)
             writer.writerow(valuesToSave)
             file.close()
             
             print("wrote in .csv file")
 
-            time.sleep(1)
+            time.sleep(30)
 
     # Exit cleanly
     except KeyboardInterrupt:
