@@ -6,6 +6,8 @@ import sys
 import os
 import csv 
 import ST7735
+import numpy
+import sounddevice
 try:
     # Transitional fix for breaking change in LTR559
     from ltr559 import LTR559
@@ -85,7 +87,12 @@ variables = ["temperature",
              "pm1",
              "pm25",
              "pm10",
-             "timestamp"]
+             "timestamp",
+             "mic_amp_low",
+             "mic_amp_mid",
+             "mic_amp_high",
+             "mic_amp_total"
+             ]
 
 units = ["C",
          "hPa",
@@ -97,7 +104,15 @@ units = ["C",
          "ug/m3",
          "ug/m3",
          "ug/m3",
-         "time"]
+         "time",
+         "%",
+         "%",
+         "%",
+         "%"
+         ]
+
+duration = 4
+sample_rate = 16000
 
 # Define your own warning limits
 # The limits definition follows the order of the variables array
@@ -122,6 +137,10 @@ limits = [[4, 18, 28, 35],
           [-1, -1, 50, 100],
           [-1, -1, 50, 100],
           [-1, -1, 50, 100],
+          [0,0,0,0],
+          [0,0,0,0],
+          [0,0,0,0],
+          [0,0,0,0],
           [0,0,0,0]]
 
 # RGB palette for values on the combined screen
@@ -150,6 +169,40 @@ writer.writerow(variables)
 file.close()
 
 
+def get_noise_profile(recording,
+                      noise_floor=100,
+                      low=0.12,
+                      mid=0.36,
+                      high=None):
+    """Returns a noise charateristic profile.
+
+    Bins all frequencies into 3 weighted groups expressed as a percentage of the total frequency range.
+
+    :param noise_floor: "High-pass" frequency, exclude frequencies below this value
+    :param low: Percentage of frequency ranges to count in the low bin (as a float, 0.5 = 50%)
+    :param mid: Percentage of frequency ranges to count in the mid bin (as a float, 0.5 = 50%)
+    :param high: Optional percentage for high bin, effectively creates a "Low-pass" if total percentage is less than 100%
+
+    """
+
+    if high is None:
+        high = 1.0 - low - mid
+
+    
+    magnitude = numpy.abs(numpy.fft.rfft(recording[:, 0], n=sample_rate))
+
+    sample_count = (sample_rate // 2) - noise_floor
+
+    mid_start = noise_floor + int(sample_count * low)
+    high_start = mid_start + int(sample_count * mid)
+    noise_ceiling = high_start + int(sample_count * high)
+
+    amp_low = numpy.mean(magnitude[noise_floor:mid_start])
+    amp_mid = numpy.mean(magnitude[mid_start:high_start])
+    amp_high = numpy.mean(magnitude[high_start:noise_ceiling])
+    amp_total = (amp_low + amp_mid + amp_high) / 3.0
+
+    return amp_low, amp_mid, amp_high, amp_total
 
 
 
@@ -209,6 +262,21 @@ def display_everything():
         draw.text((x, y), message, font=smallfont, fill=rgb)
     st7735.display(img)
 
+def clear_screen():
+    st7735.set_backlight(0)
+    #draw.rectangle((0, 0, WIDTH, HEIGHT), (0, 0, 0))
+    #st7735.display(img)
+
+# Displays all the text on the 0.96" LCD
+def display_info(message, message1=""):
+    
+    print("Displaying info!", message)
+    draw.rectangle((0, 0, WIDTH, HEIGHT), (0, 0, 255))
+
+    draw.text((10,10), message, font=smallfont, fill=(0,0,255))
+    draw.text((10,40), message1, font=smallfont, fill=(255,255,255))
+    st7735.display(img)
+
 
 # Get the temperature of the CPU for compensation
 def get_cpu_temperature():
@@ -261,10 +329,32 @@ def main():
             save_data(4, gas_data.oxidising / 1000)
             save_data(5, gas_data.reducing / 1000)
             save_data(6, gas_data.nh3 / 1000)
-            display_everything()
+          
             pms_data = None
             
             
+            display_info("Recording audio...")
+            
+            
+            print("Recording for", duration, " seconds with sample rate", sample_rate)
+            recording = sounddevice.rec(
+                int(duration * 16000),
+                samplerate = 16000,
+                blocking=True,
+                channels=1,
+                dtype='float64'
+            )
+            #print(recording)
+            
+            noise_profile = get_noise_profile(recording)
+            save_data(10,noise_profile[0])
+            save_data(11,noise_profile[1])
+            save_data(12,noise_profile[2])
+            save_data(13,noise_profile[3])
+            print(noise_profile)
+            
+            display_info("Finished recording and analysing audio.")
+            time.sleep(0.5)
             #how to log this now
             #get the time 
             t = time.localtime()
@@ -280,15 +370,26 @@ def main():
                 valuesToSave.append(data_value)
                 print(variable, ":", data_value, unit)
             
+            valuesToSave+= [current_time]
             print("vals to save ", valuesToSave)
+            st7735.set_backlight(5)
+            display_info("Opening file...")
             file = open(filename, 'a')
             writer = csv.writer(file)
             writer.writerow(valuesToSave)
             file.close()
-            
             print("wrote in .csv file")
-
-            time.sleep(30)
+            dir_path = os.path.dirname(os.path.realpath(__file__))
+            display_info("current Folder is :", dir_path)
+            time.sleep(2);
+            display_info("Saved to file: ", filename) 
+            time.sleep(2)
+        
+            display_everything()
+     
+            time.sleep(2)
+            clear_screen()
+            time.sleep(22) #+ 6 seconds waiting makes 30
 
     # Exit cleanly
     except KeyboardInterrupt:
